@@ -1,6 +1,8 @@
 //! # getch-rs
 //!
-//! `getch` is a C language function designed to capture a single character input from the keyboard without requiring the user to press the Enter key. This function suspends program execution until the user provides input. Typically employed in console-based programs, it proves useful for scenarios where menu selection or awaiting key input is required.
+//! `getch` is a C language function designed to capture a single character input from the keyboard without requiring the user to press the Enter key.
+//! This function suspends program execution until the user provides input. Typically employed in console-based programs, it proves useful for
+//! scenarios where menu selection or awaiting key input is required.
 //!
 //! ## Example
 //!
@@ -32,11 +34,11 @@ use winapi::{
     um::wincon::{ENABLE_ECHO_INPUT, ENABLE_VIRTUAL_TERMINAL_INPUT},
 };
 
-#[cfg(not(windows))]
-use nix::sys::termios;
-
 use std::cell::RefCell;
 use std::io::Read;
+#[cfg(not(windows))]
+use termios;
+use termios::{tcsetattr, ECHO, ICANON, ISIG};
 
 #[cfg(windows)]
 pub struct Getch {
@@ -119,17 +121,14 @@ impl Getch {
     #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         // Quering original as a separate, since `Termios` does not implement copy
-        let orig_term       = termios::tcgetattr(0).unwrap();
-        let mut raw_termios = termios::tcgetattr(0).unwrap();
-
+        let orig_term = termios::Termios::from_fd(0).unwrap();
+        let mut raw_termios = termios::Termios::from_fd(0).unwrap();
         // Unset canonical mode, so we get characters immediately
-        raw_termios.local_flags.remove(termios::LocalFlags::ICANON);
         // Don't generate signals on Ctrl-C and friends
-        raw_termios.local_flags.remove(termios::LocalFlags::ISIG);
         // Disable local echo
-        raw_termios.local_flags.remove(termios::LocalFlags::ECHO);
+        raw_termios.c_lflag &= !(ICANON | ISIG | ECHO);
 
-        termios::tcsetattr(0, termios::SetArg::TCSADRAIN, &raw_termios).unwrap();
+        tcsetattr(0, termios::TCSADRAIN, &raw_termios).unwrap();
 
         Self {
             orig_term,
@@ -189,9 +188,9 @@ pub fn enable_echo_input() {
 
     #[cfg(not(windows))]
     {
-        let mut raw_termios = termios::tcgetattr(0).unwrap();
-        raw_termios.local_flags.insert(termios::LocalFlags::ECHO);
-        termios::tcsetattr(0, termios::SetArg::TCSADRAIN, &raw_termios).unwrap();
+        let mut raw_termios = termios::Termios::from_fd(0).unwrap();
+        raw_termios.c_lflag &= !(ECHO);
+        tcsetattr(0, termios::TCSADRAIN, &raw_termios).unwrap();
     }
 }
 
@@ -213,9 +212,9 @@ pub fn disable_echo_input() {
 
     #[cfg(not(windows))]
     {
-        let mut raw_termios = termios::tcgetattr(0).unwrap();
-        raw_termios.local_flags.remove(termios::LocalFlags::ECHO);
-        termios::tcsetattr(0, termios::SetArg::TCSADRAIN, &raw_termios).unwrap();
+        let mut raw_termios = termios::Termios::from_fd(0).unwrap();
+        raw_termios.c_lflag &= !(ECHO);
+        tcsetattr(0, termios::TCSADRAIN, &raw_termios).unwrap();
     }
 }
 
@@ -237,22 +236,22 @@ where
                     }
                 }
                 Some(Ok(c)) => match parse_utf8_char(c, iter)? {
-                    Ok(ch)   => Key::Alt(ch),
+                    Ok(ch) => Key::Alt(ch),
                     Err(vec) => Key::Other(vec),
                 },
                 Some(Err(e)) => return Err(e),
                 None => Key::Esc,
             })
         }
-        b'\n' | b'\r'         => Ok(Key::Char('\r')),
-        b'\t'                 => Ok(Key::Char('\t')),
-        b'\x08'               => Ok(Key::Backspace),
-        b'\x7F'               => Ok(Key::Delete),
+        b'\n' | b'\r' => Ok(Key::Char('\r')),
+        b'\t' => Ok(Key::Char('\t')),
+        b'\x08' => Ok(Key::Backspace),
+        b'\x7F' => Ok(Key::Delete),
         c @ b'\x01'..=b'\x1A' => Ok(Key::Ctrl((c - 0x1 + b'a') as char)),
         c @ b'\x1C'..=b'\x1F' => Ok(Key::Ctrl((c - 0x1C + b'4') as char)),
-        b'\0'                 => Ok(Key::EOF),
+        b'\0' => Ok(Key::EOF),
         c => Ok(match parse_utf8_char(c, iter)? {
-            Ok(ch)   => Key::Char(ch),
+            Ok(ch) => Key::Char(ch),
             Err(vec) => Key::Other(vec),
         }),
     }
@@ -284,7 +283,8 @@ where
             let mut c = iter.next().unwrap().unwrap();
             // The final byte of a CSI sequence can be in the range 64-126, so
             // let's keep reading anything else.
-            while !(64..=126).contains(&c) {  // c < 64 || 126 < c
+            while !(64..=126).contains(&c) {
+                // c < 64 || 126 < c
                 buf.push(c);
                 c = iter.next().unwrap().unwrap();
             }
@@ -305,11 +305,11 @@ where
 
                     match nums[0] {
                         1 | 7 => Key::Home,
-                        2     => Key::Insert,
-                        3     => Key::Delete,
+                        2 => Key::Insert,
+                        3 => Key::Delete,
                         4 | 8 => Key::End,
-                        5     => Key::PageUp,
-                        6     => Key::PageDown,
+                        5 => Key::PageUp,
+                        6 => Key::PageDown,
                         v @ 11..=15 => Key::F(v - 10),
                         v @ 17..=21 => Key::F(v - 11),
                         v @ 23..=24 => Key::F(v - 12),
@@ -373,6 +373,6 @@ impl Drop for Getch {
 
     #[cfg(not(windows))]
     fn drop(&mut self) {
-        termios::tcsetattr(0, termios::SetArg::TCSADRAIN, &self.orig_term).unwrap();
+        tcsetattr(0, termios::TCSADRAIN, &self.orig_term).unwrap();
     }
 }
