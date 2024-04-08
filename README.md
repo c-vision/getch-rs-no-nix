@@ -5,7 +5,7 @@
 [![Documentation](https://docs.rs/getch-rs/badge.svg)](https://docs.rs/getch-rs/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg?style=flat)](LICENSE)
 
-`getch` for Windows and Unix.
+`getch` for Windows and Unix. References to nix library have been removed from original code
 
 ## Usage
 
@@ -13,7 +13,7 @@ Cargo.toml
 
 ```toml
 [dependencies]
-getch-rs = "0.2"
+getch-rs = "0.3"
 ```
 
 main.rs
